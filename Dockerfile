@@ -30,4 +30,6 @@ RUN chmod 755 /usr/local/bin/docker-entrypoint && \
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD bash -c 'echo >/dev/udp/127.0.0.1/500 >/dev/null 2>&1'
 
+EXPOSE 500/udp 4500/udp
+
 ENTRYPOINT ["docker-entrypoint"]
