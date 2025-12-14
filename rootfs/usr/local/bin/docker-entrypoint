@@ -1,0 +1,66 @@
+#!/bin/sh
+set -e
+
+: ${DOMAIN:=$(ip route show | grep default | awk '{print $3}')}
+: ${IPSEC_CONF:="/etc/ipsec.conf"}
+: ${IPSEC_SECRETS:="/etc/ipsec.secrets"}
+: ${CA_KEY:="/etc/ipsec.d/private/ca-key.pem"}
+: ${CA_CERT:="/etc/ipsec.d/cacerts/ca-cert.pem"}
+: ${SERVER_KEY:="/etc/ipsec.d/private/server-key.pem"}
+: ${SERVER_CERT:="/etc/ipsec.d/certs/server-cert.pem"}
+
+if echo "$DOMAIN" | grep -Eq "^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"; then
+    SANIP="--san @$DOMAIN"
+    LEFTID=$DOMAIN
+else
+    SANIP=""
+    LEFTID=@$DOMAIN
+fi
+
+if [ -f "$IPSEC_CONF" ] && grep -q "\$LEFTID" "$IPSEC_CONF"; then
+    echo "Updating ipsec.conf with LEFTID..."
+    sed -i "s|\$LEFTID|$LEFTID|g" "$IPSEC_CONF"
+fi
+
+if [ ! -f "$IPSEC_SECRETS" ]; then
+    echo "Creating ipsec.secrets file..."
+    : ${USERNAME:='username'}
+    : ${PASSWORD:='password'}
+    printf ': RSA "server-key.pem"\n%s : EAP "%s"\n' "$USERNAME" "$PASSWORD" > "$IPSEC_SECRETS"
+    chmod 600 "$IPSEC_SECRETS"
+fi
+
+if [ ! -f "$CA_KEY" ]; then
+    echo "Generating CA Key..."
+    pki --gen --type rsa --size 4096 --outform pem > "$CA_KEY"
+fi
+if [ ! -f "$CA_CERT" ]; then
+    echo "Generating CA Certificate..."
+    pki --self --ca --lifetime 3650 --in "$CA_KEY" \
+        --type rsa --dn "CN=VPN root CA" --outform pem > "$CA_CERT"
+fi
+if [ ! -f "$SERVER_KEY" ]; then
+    echo "Generating Server Key..."
+    pki --gen --type rsa --size 4096 --outform pem > "$SERVER_KEY"
+fi
+if [ ! -f "$SERVER_CERT" ]; then
+    echo "Generating Server Certificate..."
+    pki --pub --in "$SERVER_KEY" --type rsa \
+        | pki --issue --lifetime 1825 \
+        --cacert "$CA_CERT" \
+        --cakey "$CA_KEY" \
+        --dn "CN=$DOMAIN" --san "$DOMAIN" $SANIP \
+        --flag serverAuth --flag ikeIntermediate --outform pem \
+        > "$SERVER_CERT"
+fi
+
+printf "[CA Certificate Info]\n"
+pki --print --in /etc/ipsec.d/certs/server-cert.pem
+printf "[CA Certificate Key]\n"
+cat /etc/ipsec.d/cacerts/ca-cert.pem
+
+if command -v set-iptables > /dev/null 2>&1; then
+    set-iptables
+fi
+
+exec ipsec start --nofork
