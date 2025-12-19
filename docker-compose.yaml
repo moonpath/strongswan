@@ -12,8 +12,12 @@ services:
     restart: unless-stopped
     stdin_open: true
     tty: true
+    cap_add:
+      - NET_ADMIN
     environment:
       DOMAIN: ${DOMAIN:-$HOSTNAME}
+      USERNAME: ${USERNAME:-username}
+      PASSWORD: ${PASSWORD:-password}
     ports:
       - "500:500/udp"
       - "4500:4500/udp"

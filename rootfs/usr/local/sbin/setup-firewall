@@ -1,0 +1,11 @@
+#!/bin/sh
+
+nft flush ruleset
+
+nft add table inet strongswan
+
+nft add chain inet strongswan nat_postrouting { type nat hook postrouting priority srcnat \; policy accept \; }
+nft add rule inet strongswan nat_postrouting ip saddr 100.64.0.0/24 oifname "eth0" masquerade
+
+nft add chain inet strongswan mangle_forward { type filter hook forward priority mangle \; policy accept \; }
+nft add rule inet strongswan mangle_forward ip saddr 100.64.0.0/24 oifname "eth0" tcp flags syn tcp option maxseg size 1361-1536 tcp option maxseg size set 1360

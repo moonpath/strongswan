@@ -2,12 +2,11 @@
 set -e
 
 : ${DOMAIN:=$(ip route show | grep default | awk '{print $3}')}
-: ${IPSEC_CONF:="/etc/ipsec.conf"}
-: ${IPSEC_SECRETS:="/etc/ipsec.secrets"}
-: ${CA_KEY:="/etc/ipsec.d/private/ca-key.pem"}
-: ${CA_CERT:="/etc/ipsec.d/cacerts/ca-cert.pem"}
-: ${SERVER_KEY:="/etc/ipsec.d/private/server-key.pem"}
-: ${SERVER_CERT:="/etc/ipsec.d/certs/server-cert.pem"}
+: ${SWANCTL_CONF:="/etc/swanctl/swanctl.conf"}
+: ${CA_KEY:="/etc/swanctl/private/ca-key.pem"}
+: ${CA_CERT:="/etc/swanctl/x509ca/ca-cert.pem"}
+: ${SERVER_KEY:="/etc/swanctl/private/server-key.pem"}
+: ${SERVER_CERT:="/etc/swanctl/x509/server-cert.pem"}
 
 if echo "$DOMAIN" | grep -Eq "^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"; then
     SANIP="--san @$DOMAIN"
@@ -17,35 +16,38 @@ else
     LEFTID=@$DOMAIN
 fi
 
-if [ -f "$IPSEC_CONF" ] && grep -q "\$LEFTID" "$IPSEC_CONF"; then
-    echo "Updating ipsec.conf with LEFTID..."
-    sed -i "s|\$LEFTID|$LEFTID|g" "$IPSEC_CONF"
-fi
-
-if [ ! -f "$IPSEC_SECRETS" ]; then
-    echo "Creating ipsec.secrets file..."
+# Update swanctl.conf with dynamic values
+if [ -f "$SWANCTL_CONF" ]; then
+    echo "Updating swanctl.conf with LEFTID..."
+    sed -i "s|\$LEFTID|$LEFTID|g" "$SWANCTL_CONF"
+    
+    # Update username and password if provided
     : ${USERNAME:='username'}
     : ${PASSWORD:='password'}
-    printf ': RSA "server-key.pem"\n%s : EAP "%s"\n' "$USERNAME" "$PASSWORD" > "$IPSEC_SECRETS"
-    chmod 600 "$IPSEC_SECRETS"
+    sed -i "s|\$USERNAME|$USERNAME|g" "$SWANCTL_CONF"
+    sed -i "s|\$PASSWORD|$PASSWORD|g" "$SWANCTL_CONF"
 fi
 
+# Generate certificates if they don't exist
 if [ ! -f "$CA_KEY" ]; then
-    echo "Generating CA Key..."
-    pki --gen --type rsa --size 4096 --outform pem > "$CA_KEY"
+    echo "Generating CA Key (ECC P-384)..."
+    pki --gen --type ecdsa --size 384 --outform pem > "$CA_KEY"
 fi
+
 if [ ! -f "$CA_CERT" ]; then
-    echo "Generating CA Certificate..."
+    echo "Generating CA Certificate (ECC)..."
     pki --self --ca --lifetime 3650 --in "$CA_KEY" \
-        --type rsa --dn "CN=VPN root CA" --outform pem > "$CA_CERT"
+        --type ecdsa --dn "CN=VPN root CA" --outform pem > "$CA_CERT"
 fi
+
 if [ ! -f "$SERVER_KEY" ]; then
-    echo "Generating Server Key..."
-    pki --gen --type rsa --size 4096 --outform pem > "$SERVER_KEY"
+    echo "Generating Server Key (ECC P-384)..."
+    pki --gen --type ecdsa --size 384 --outform pem > "$SERVER_KEY"
 fi
+
 if [ ! -f "$SERVER_CERT" ]; then
-    echo "Generating Server Certificate..."
-    pki --pub --in "$SERVER_KEY" --type rsa \
+    echo "Generating Server Certificate (ECC)..."
+    pki --pub --in "$SERVER_KEY" --type ecdsa \
         | pki --issue --lifetime 1825 \
         --cacert "$CA_CERT" \
         --cakey "$CA_KEY" \
@@ -55,12 +57,32 @@ if [ ! -f "$SERVER_CERT" ]; then
 fi
 
 printf "[CA Certificate Info]\n"
-pki --print --in /etc/ipsec.d/certs/server-cert.pem
-printf "[CA Certificate Key]\n"
-cat /etc/ipsec.d/cacerts/ca-cert.pem
+pki --print --in "$SERVER_CERT"
+printf "\n[CA Certificate for Client Import]\n"
+cat "$CA_CERT"
 
-if command -v set-iptables > /dev/null 2>&1; then
-    set-iptables
+# Setup iptables if command exists
+if command -v setup-firewall > /dev/null 2>&1; then
+    setup-firewall
 fi
+
+# Start in foreground, but we need to load config after charon is ready
+(
+    for i in $(seq 1 100); do
+        if swanctl --stats > /dev/null 2>&1; then
+            echo "Loading swanctl configuration..."
+            if swanctl --load-all; then
+                exit 0
+            else
+                kill -TERM 1
+                exit 1
+            fi
+        fi
+        sleep 0.2
+    done
+    echo "Error: Timed out waiting for charon to start!"
+    kill -TERM 1
+    exit 1
+) &
 
 exec ipsec start --nofork
