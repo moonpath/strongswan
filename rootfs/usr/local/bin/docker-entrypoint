@@ -17,17 +17,22 @@ else
 fi
 
 # Update swanctl.conf with dynamic values
-if [ -f "$SWANCTL_CONF" ] && [ -w "$SWANCTL_CONF" ] && ! grep -Fq "$SWANCTL_CONF" /proc/mounts; then
+if [ -f "$SWANCTL_CONF" ] && [ -w "$SWANCTL_CONF" ]; then
     : ${USERNAME:='username'}
     : ${PASSWORD:='password'}
 
+    TMP_CONF=$(mktemp)
+    
     D=$(printf "\001")
-    CONF_CONTENT=$(cat "$SWANCTL_CONF" | sed "s${D}\$LEFTID${D}$LEFTID${D}g; s${D}\$USERNAME${D}$USERNAME${D}g; s${D}\$PASSWORD${D}$PASSWORD${D}g")
+    
+    sed "s${D}\$LEFTID${D}$LEFTID${D}g; s${D}\$USERNAME${D}$USERNAME${D}g; s${D}\$PASSWORD${D}$PASSWORD${D}g" "$SWANCTL_CONF" > "$TMP_CONF"
 
-    if [ "$CONF_CONTENT" != "$(cat "$SWANCTL_CONF")" ]; then
+    if ! cmp -s "$SWANCTL_CONF" "$TMP_CONF"; then
         echo "Configuring swanctl.conf with dynamic values..."
-        printf "%s\n" "$CONF_CONTENT" > "$SWANCTL_CONF" || true
+        cat "$TMP_CONF" > "$SWANCTL_CONF" || true
     fi
+
+    rm -f "$TMP_CONF"
 fi
 
 # Generate certificates if they don't exist
@@ -71,6 +76,7 @@ fi
 # Start in foreground, but we need to load config after charon is ready
 (
     for i in $(seq 1 100); do
+        sleep 0.2
         if swanctl --stats > /dev/null 2>&1; then
             echo "Loading swanctl configuration..."
             if swanctl --load-all; then
@@ -80,7 +86,6 @@ fi
                 exit 1
             fi
         fi
-        sleep 0.2
     done
     echo "Error: Timed out waiting for charon to start!"
     kill -TERM 1
