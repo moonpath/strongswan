@@ -1,8 +1,6 @@
 ARG BASE_IMAGE="alpine:latest"
 FROM $BASE_IMAGE AS runtime
 
-ARG DEBIAN_FRONTEND=noninteractive
-
 RUN apk add --no-cache \
     strongswan \
     nftables

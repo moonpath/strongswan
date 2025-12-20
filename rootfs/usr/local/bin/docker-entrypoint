@@ -17,14 +17,17 @@ else
 fi
 
 # Update swanctl.conf with dynamic values
-if [ -f "$SWANCTL_CONF" ] && [ -w "$SWANCTL_CONF" ]; then
-    echo "Configuring swanctl.conf with dynamic values..."
+if [ -f "$SWANCTL_CONF" ] && [ -w "$SWANCTL_CONF" ] && ! grep -Fq "$SWANCTL_CONF" /proc/mounts; then
     : ${USERNAME:='username'}
     : ${PASSWORD:='password'}
 
-    CONF_CONTENT=$(cat "$SWANCTL_CONF" | sed "s|\$LEFTID|$LEFTID|g; s|\$USERNAME|$USERNAME|g; s|\$PASSWORD|$PASSWORD|g")
+    D=$(printf "\001")
+    CONF_CONTENT=$(cat "$SWANCTL_CONF" | sed "s${D}\$LEFTID${D}$LEFTID${D}g; s${D}\$USERNAME${D}$USERNAME${D}g; s${D}\$PASSWORD${D}$PASSWORD${D}g")
 
-    printf "%s\n" "$CONF_CONTENT" > "$SWANCTL_CONF" || true
+    if [ "$CONF_CONTENT" != "$(cat "$SWANCTL_CONF")" ]; then
+        echo "Configuring swanctl.conf with dynamic values..."
+        printf "%s\n" "$CONF_CONTENT" > "$SWANCTL_CONF" || true
+    fi
 fi
 
 # Generate certificates if they don't exist
