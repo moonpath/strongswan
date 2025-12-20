@@ -8,24 +8,23 @@ set -e
 : ${SERVER_KEY:="/etc/swanctl/private/server-key.pem"}
 : ${SERVER_CERT:="/etc/swanctl/x509/server-cert.pem"}
 
-if echo "$DOMAIN" | grep -Eq "^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"; then
+if printf "%s" "$DOMAIN" | grep -Eq "^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"; then
     SANIP="--san @$DOMAIN"
-    LEFTID=$DOMAIN
+    LEFTID="$DOMAIN"
 else
     SANIP=""
-    LEFTID=@$DOMAIN
+    LEFTID="@$DOMAIN"
 fi
 
 # Update swanctl.conf with dynamic values
-if [ -f "$SWANCTL_CONF" ]; then
-    echo "Updating swanctl.conf with LEFTID..."
-    sed -i "s|\$LEFTID|$LEFTID|g" "$SWANCTL_CONF"
-    
-    # Update username and password if provided
+if [ -f "$SWANCTL_CONF" ] && [ -w "$SWANCTL_CONF" ]; then
+    echo "Configuring swanctl.conf with dynamic values..."
     : ${USERNAME:='username'}
     : ${PASSWORD:='password'}
-    sed -i "s|\$USERNAME|$USERNAME|g" "$SWANCTL_CONF"
-    sed -i "s|\$PASSWORD|$PASSWORD|g" "$SWANCTL_CONF"
+
+    CONF_CONTENT=$(cat "$SWANCTL_CONF" | sed "s|\$LEFTID|$LEFTID|g; s|\$USERNAME|$USERNAME|g; s|\$PASSWORD|$PASSWORD|g")
+
+    printf "%s\n" "$CONF_CONTENT" > "$SWANCTL_CONF" || true
 fi
 
 # Generate certificates if they don't exist
