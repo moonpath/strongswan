@@ -6,6 +6,9 @@ services:
       dockerfile: Dockerfile
       args:
         - BASE_IMAGE=alpine:latest
+      tags:
+        - "moonpath/strongswan:latest"
+        - "moonpath/strongswan:alpine-latest"
     container_name: strongswan
     hostname: strongswan
     privileged: true
