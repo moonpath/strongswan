@@ -44,7 +44,7 @@ fi
 if [ ! -f "$CA_CERT" ]; then
     echo "Generating CA Certificate (ECC)..."
     pki --self --ca --lifetime 3650 --in "$CA_KEY" \
-        --type ecdsa --dn "CN=VPN root CA" --outform pem > "$CA_CERT"
+        --type ecdsa --dn "CN=IPSec Root CA" --outform pem > "$CA_CERT"
 fi
 
 if [ ! -f "$SERVER_KEY" ]; then
