@@ -3,6 +3,7 @@ set -e
 
 : ${DOMAIN:=$(ip route show | grep default | awk '{print $3}')}
 : ${SWANCTL_CONF:="/etc/swanctl/swanctl.conf"}
+: ${ALGORITHM_TYPE:='rsa'}
 : ${CA_KEY:="/etc/swanctl/private/ca-key.pem"}
 : ${CA_CERT:="/etc/swanctl/x509ca/ca-cert.pem"}
 : ${SERVER_KEY:="/etc/swanctl/private/server-key.pem"}
@@ -25,7 +26,7 @@ if [ -f "$SWANCTL_CONF" ] && [ -w "$SWANCTL_CONF" ]; then
     
     D=$(printf "\001")
     
-    sed "s${D}\$LEFTID${D}$LEFTID${D}g; s${D}\$USERNAME${D}$USERNAME${D}g; s${D}\$PASSWORD${D}$PASSWORD${D}g" "$SWANCTL_CONF" > "$TMP_CONF"
+    sed "s${D}\$LEFTID${D}$LEFTID${D}g; s${D}\$USERNAME${D}$USERNAME${D}g; s${D}\$PASSWORD${D}$PASSWORD${D}g; s${D}\$CERTTYPE${D}$CERTTYPE${D}g" "$SWANCTL_CONF" > "$TMP_CONF"
 
     if ! cmp -s "$SWANCTL_CONF" "$TMP_CONF"; then
         echo "Configuring swanctl.conf with dynamic values..."
@@ -36,31 +37,62 @@ if [ -f "$SWANCTL_CONF" ] && [ -w "$SWANCTL_CONF" ]; then
 fi
 
 # Generate certificates if they don't exist
-if [ ! -f "$CA_KEY" ]; then
-    echo "Generating CA Key (ECC P-384)..."
-    pki --gen --type ecdsa --size 384 --outform pem > "$CA_KEY"
-fi
+if [ "$ALGORITHM_TYPE" = "ecdsa" ]; then
+    echo "Issuing ECDSA Certificates..."
+    if [ ! -f "$CA_KEY" ]; then
+        echo "Generating CA Key (ECC P-384)..."
+        pki --gen --type ecdsa --size 384 --outform pem > "$CA_KEY"
+    fi
 
-if [ ! -f "$CA_CERT" ]; then
-    echo "Generating CA Certificate (ECC)..."
-    pki --self --ca --lifetime 3650 --in "$CA_KEY" \
-        --type ecdsa --dn "CN=IPSec Root CA" --outform pem > "$CA_CERT"
-fi
+    if [ ! -f "$CA_CERT" ]; then
+        echo "Generating CA Certificate (ECC)..."
+        pki --self --ca --lifetime 3650 --in "$CA_KEY" \
+            --type ecdsa --dn "CN=IPSec Root CA" --outform pem > "$CA_CERT"
+    fi
 
-if [ ! -f "$SERVER_KEY" ]; then
-    echo "Generating Server Key (ECC P-384)..."
-    pki --gen --type ecdsa --size 384 --outform pem > "$SERVER_KEY"
-fi
+    if [ ! -f "$SERVER_KEY" ]; then
+        echo "Generating Server Key (ECC P-384)..."
+        pki --gen --type ecdsa --size 384 --outform pem > "$SERVER_KEY"
+    fi
 
-if [ ! -f "$SERVER_CERT" ]; then
-    echo "Generating Server Certificate (ECC)..."
-    pki --pub --in "$SERVER_KEY" --type ecdsa \
-        | pki --issue --lifetime 1825 \
-        --cacert "$CA_CERT" \
-        --cakey "$CA_KEY" \
-        --dn "CN=$DOMAIN" --san "$DOMAIN" $SANIP \
-        --flag serverAuth --flag ikeIntermediate --outform pem \
-        > "$SERVER_CERT"
+    if [ ! -f "$SERVER_CERT" ]; then
+        echo "Generating Server Certificate (ECC)..."
+        pki --pub --in "$SERVER_KEY" --type ecdsa \
+            | pki --issue --lifetime 1825 \
+            --cacert "$CA_CERT" \
+            --cakey "$CA_KEY" \
+            --dn "CN=$DOMAIN" --san "$DOMAIN" $SANIP \
+            --flag serverAuth --flag ikeIntermediate --outform pem \
+            > "$SERVER_CERT"
+    fi
+else
+    echo "Issuing RSA Certificates..."
+    if [ ! -f "$CA_KEY" ]; then
+        echo "Generating CA Key..."
+        pki --gen --type rsa --size 4096 --outform pem > "$CA_KEY"
+    fi
+
+    if [ ! -f "$CA_CERT" ]; then
+        echo "Generating CA Certificate..."
+        pki --self --ca --lifetime 3650 --in "$CA_KEY" \
+            --type rsa --dn "CN=IPSec Root CA" --outform pem > "$CA_CERT"
+    fi
+
+    if [ ! -f "$SERVER_KEY" ]; then
+        echo "Generating Server Key..."
+        pki --gen --type rsa --size 4096 --outform pem > "$SERVER_KEY"
+    fi
+
+    if [ ! -f "$SERVER_CERT" ]; then
+        echo "Generating Server Certificate..."
+        pki --pub --in "$SERVER_KEY" --type rsa \
+            | pki --issue --lifetime 1825 \
+            --cacert "$CA_CERT" \
+            --cakey "$CA_KEY" \
+            --dn "CN=$DOMAIN" --san "$DOMAIN" $SANIP \
+            --flag serverAuth --flag ikeIntermediate --outform pem \
+            > "$SERVER_CERT"
+    fi
 fi
 
 printf "[CA Certificate Info]\n"
