@@ -21,12 +21,19 @@ fi
 if [ -f "$SWANCTL_CONF" ] && [ -w "$SWANCTL_CONF" ]; then
     : ${USERNAME:='username'}
     : ${PASSWORD:='password'}
+    : ${ENABLE_IPV6:='false'}
+
+    if [ "$ENABLE_IPV6" = "true" ]; then
+        POOLS="primary-pool,primary-pool-v6"
+    else
+        POOLS="primary-pool"
+    fi
 
     TMP_CONF=$(mktemp)
     
     D=$(printf "\001")
     
-    sed "s${D}\$LEFTID${D}$LEFTID${D}g; s${D}\$USERNAME${D}$USERNAME${D}g; s${D}\$PASSWORD${D}$PASSWORD${D}g; s${D}\$CERTTYPE${D}$CERTTYPE${D}g" "$SWANCTL_CONF" > "$TMP_CONF"
+    sed "s${D}\$LEFTID${D}$LEFTID${D}g; s${D}\$USERNAME${D}$USERNAME${D}g; s${D}\$PASSWORD${D}$PASSWORD${D}g; s${D}\$CERTTYPE${D}$CERTTYPE${D}g; s${D}\$POOLS${D}$POOLS${D}g" "$SWANCTL_CONF" > "$TMP_CONF"
 
     if ! cmp -s "$SWANCTL_CONF" "$TMP_CONF"; then
         echo "Configuring swanctl.conf with dynamic values..."

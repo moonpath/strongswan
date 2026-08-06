@@ -39,6 +39,7 @@ services:
       DOMAIN: ${DOMAIN:-$HOSTNAME}
       USERNAME: ${USERNAME:-username}
       PASSWORD: ${PASSWORD:-password}
+      ENABLE_IPV6: ${ENABLE_IPV6:-false}
     deploy:
       resources:
         limits:
